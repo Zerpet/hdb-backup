@@ -7,8 +7,9 @@ HDFS.
 
 # Requirements
 - Python 2.6+
-- Psycopg2
-- hdfs3
+- Psycopg2  (python module)
+- argparse  (python module)
+- hdfs3     (python module)
 - HDB 2.x
 - PXF
 
