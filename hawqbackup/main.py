@@ -71,6 +71,49 @@ def parseargs(args):
     return options_object
 
 
+def is_schema_name_valid(name):
+    """
+    This function helps to check that schema names or table names have proper format. Specifically, we have to check
+    if the name has a dot. If it does, the name should be enclosed in double quotes.
+
+    To check if a full table name (schema + table) is valid, use __is_table_name_valid()
+    :param name: schema or table name to check
+    :return: True if the name is valid; False else
+    """
+    # TODO: implement me
+    return False
+
+
+def is_table_name_valid(name):
+    """
+    Check if schema.table name is valid. It has to check if the full name has dots; if it does, only one dot should be
+    outside double quotes
+    :param name:
+    :return:
+    """
+
+    if type(name) is not str:
+        return False
+
+    n_dots = name.count('.')
+
+    # No schema name provided, failure. We need <schema>.<table>
+    if n_dots == 0:
+        return False
+
+    elif n_dots == 1:
+        return True
+
+    # We have more than one dot. Names should be quoted
+    else:
+        import re
+        valid1 = r'^"[a-zA-Z\.]+"\."[a-zA-Z\.]+"$'
+        valid2 = r'^"[a-zA-Z\.]+"\.[a-zA-Z]+$'
+        valid3 = r'^[a-zA-Z]+\."[a-zA-Z\.]+"$'
+
+        return re.match(valid1, name) or re.match(valid2, name) or re.match(valid3, name) or False
+
+
 def main(args):
     logging_format = "%(asctime)-15s - %(module)s.%(funcName)s - %(levelname)s - %(message)s"
     log_file_name = expanduser('~') + '/hawq_backup.log'
