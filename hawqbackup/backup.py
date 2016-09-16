@@ -9,8 +9,7 @@ class HdbBackup:
     
     def __init__(self):
         """
-        Create a HdbBackup object with a connection object
-        :param connection_obj An initialized Psycopg2 connection object
+        Create a HdbBackup object..
         """
         # Connection parameters
         self.conn = None
@@ -51,8 +50,8 @@ class HdbBackup:
         self.schema_query_skeleton = """ SELECT COUNT(*) FROM pg_namespace WHERE nspname = '{0}' """
 
     def set_backup_id(self):
-        """Set the backup ID to be used in this backup. The most common ID format is <year><month><day><hour><minute>
-         For example, 201601011700 will be the standard for January 1st, 2016 at 5 PM.
+        """Set the backup ID to be used in this backup. The most common ID format is <year><month><day><hour><minute><seconds>
+         For example, 20160101170000 will be the standard for January 1st, 2016 at 5 PM.
         """
         self.logger.debug("Generating the backup ID for the backup")
         self.backup_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -393,7 +392,7 @@ class HdbBackup:
             self.conn.commit()
         except DatabaseError:
             error_logger("Found schema \"{0}\" already exits on the database \"{1}\", "
-                                "Try dropping/renaming the schema or use --force option".format(
+                         "Try dropping/renaming the schema or use --force option".format(
                 self.ext_schema_name, self.dbname
             ))
 
