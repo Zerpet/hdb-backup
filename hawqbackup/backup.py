@@ -2,6 +2,7 @@ import datetime, logging
 from pgdb import connect, DatabaseError
 from lib import check_executables, error_logger, set_connection, run_cmd, print_progress
 
+
 class HdbBackup:
     
     logger = logging.getLogger("hdb_logger")
@@ -440,7 +441,7 @@ class HdbBackup:
         self.logger.info("Preparing all the directories where the backup will be stored")
         self.__prepare_backup()
 
-        # Display the
+        # Display the backup information
         self.print_display_info()
 
         # Unless explicitly requested not to dump metadata, backup the metadata of objects

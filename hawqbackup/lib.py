@@ -14,13 +14,13 @@ def check_executables():
 
 def error_logger(error):
         """
-        If called it prints the error and exists
+        If called it prints the error and exit
         :param error: the error message from the exception
         """
         # The error message to be printed when called.
         logger.error("Found exception in executing the command, "
-                          "the error message received from the command is below, "
-                          "aborting the script ...")
+                     "the error message received from the command is below, "
+                     "aborting the script ...")
         logger.error(error)
         sys.exit(2)
 
