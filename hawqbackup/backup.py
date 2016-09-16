@@ -216,7 +216,7 @@ class HdbBackup:
                                               'pg_bitmapindex',
                                               'pg_toast', 'gp_toolkit' )
                     AND c.relkind = 'r' and c.relstorage != 'x'
-                    AND relname not in ( SELECT partitiontablename from pg_partitions) """
+                    AND relname not in (SELECT partitiontablename FROM pg_partitions) """
 
         # If only selected table then add table include condition
         if self.table:
