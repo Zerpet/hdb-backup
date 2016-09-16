@@ -27,7 +27,12 @@ def error_logger(error):
 
 def set_connection(dbname, host, port, username, password):
         """Set a new connection object for this backup
-        :param connection_obj is a Psycopg2 connection object
+        :param:
+            dbname - Database name
+            host - Hostname
+            port - Port number
+            username - Username
+            password - Password
         """
 
         logger.debug("Attempting to create a connection to the database.")
