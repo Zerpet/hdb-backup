@@ -1,15 +1,16 @@
-import subprocess, os, datetime, sys, logging
+import datetime, logging, sys
 from pgdb import connect, DatabaseError
+from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator, confirm
 
 
 class HdbBackup:
-    
+
     logger = logging.getLogger("hdb_logger")
-    
+
     def __init__(self):
         """
-        Create a HdbBackup object with a connection object
-        :param connection_obj An initialized Psycopg2 connection object
+        Create a HdbBackup object..
+        :return
         """
         # Connection parameters
         self.conn = None
@@ -37,105 +38,37 @@ class HdbBackup:
         self.data_backup_dir = None
         self.force = False
         self.create_database = False
+        self.no_prompt = False
+        self.backup_base = "/hawq_backup"
         self.ext_schema_name = 'hawqbackup_schema'
 
         # Query Skeleton for backup
         self.drop_schema_skeleton = """ DROP SCHEMA IF EXISTS {0} CASCADE """
         self.create_schema_skeleton = """ CREATE SCHEMA {0} """
-        self.lock_table_skeleton = """ LOCK TABLE {0} IN ACCESS SHARE MODE """
         self.create_external_table_skeleton = """ CREATE WRITABLE EXTERNAL TABLE {0}.{1} ( like {2} )
                                               LOCATION ('pxf://localhost:{3}{4}/{5}/{6}?profile=HdfsTextSimple')
                                               FORMAT 'TEXT' (DELIMITER = E'\\t') """
         self.insert_external_table_skeleton = """ INSERT INTO {0}.{1} SELECT * FROM {2} """
-
-    def __check_executables(self):
-        """
-        Check if the necessary executables are available on PATH
-        """
-        self.__run_cmd("which pg_dump")
-        self.__run_cmd("which pg_dumpall")
-
-    def __error_logger(self, error):
-        """
-        If called it prints the error and exists
-        :param error: the error message from the exception
-        """
-        # The error message to be printed when called.
-        self.logger.error("Found exception in executing the command, the error message received from the command is below, "
-                     "aborting the script ...")
-        self.logger.error(error)
-        sys.exit(2)
-
-    def set_connection(self):
-        """Set a new connection object for this backup
-        :param connection_obj is a Psycopg2 connection object
-        """
-
-        self.logger.debug("Attempting to create a connection to the database.")
-        self.logger.debug("Parameters :- Database name: {0}, hostname: {1}, port: {2}, user: {3}".format(
-            self.dbname, self.host, self.port, self.username
-        ))
-        try:
-            self.conn = connect(
-                database=self.dbname,
-                host=self.host + ':' + str(self.port),
-                user=self.username,
-                password=self.password
-            )
-            self.cursor = self.conn.cursor()
-        except DatabaseError, e:
-            self.__error_logger(e)
-
-    def __get_env(self):
-        """
-        Get the OS environment parameters
-        """
-        self.logger.debug("Get the OS environment variables")
-        if hasattr(self, 'env'):
-            return self.env
-
-        self.env = dict(os.environ)
-
-        # we want to assure a consistent environment
-        if 'PGOPTIONS' in self.env:
-            del self.env['PGOPTIONS']
-
-        if 'GPHOME' not in self.env:
-            self.__error_logger("The path doesnt have GPHOME, source the hawq environment path file and try again")
-
-        return self.env
+        self.schema_query_skeleton = """ SELECT COUNT(*) FROM pg_namespace WHERE nspname = '{0}' """
 
     def set_backup_id(self):
-        """Set the backup ID to be used in this backup. The most common ID format is <year><month><day><hour><minute>
-         For example, 201601011700 will be the standard for January 1st, 2016 at 5 PM.
+        """Set the backup ID to be used in this backup. The most common ID format is <year><month><day><hour><minute><seconds>
+         For example, 20160101170000 will be the standard for January 1st, 2016 at 5 PM.
+        :return: Backup ID
         """
         self.logger.debug("Generating the backup ID for the backup")
         self.backup_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         return self.backup_id
 
-    def __prepare_backup(self):
-        """
-        Prepare HDFS folders to backup the given database
-        """
-        # Set backup id
-        self.set_backup_id()
-
-        # Prepare the backup directory
-        self.logger.debug("Preparing the backup folders")
-        backup_base = "/hawq_backup"
-        backup_id = self.backup_id
-        backup_db = self.dbname
-        self.metadata_backup_dir = backup_base + '/' + str(backup_id) + '/' + backup_db + '/metadata'
-        self.data_backup_dir = backup_base + '/' + str(backup_id) + '/' + backup_db + '/data'
-
     def __backup_metadata(self):
         """
         Backup DDLs and metadata before dumping the data
+        :return
         """
 
         # Source the hawq executable path
         self.logger.info("Source the hawq executable path")
-        self.__run_cmd("source $GPHOME/greenplum_path.sh")
+        run_cmd("source $GPHOME/greenplum_path.sh")
 
         # Backup file name
         ddl_file = self.metadata_backup_dir + '/hdb_dump_' + self.backup_id + '_ddl.dmp'
@@ -145,7 +78,7 @@ class HdbBackup:
         pg_dump_cmd, pg_dumpall_cmd = self.__get_args(
             "pg_dump",
             "--schema-only",
-            "--format=p"
+            "--format=c"
         )
         pg_dump_cmd = ' '.join(pg_dump_cmd)
         pg_dump_cmd += ' | hdfs dfs -put - {0}'.format(ddl_file)
@@ -153,7 +86,7 @@ class HdbBackup:
         self.logger.info("Executing DDL backup, metadata backup file: \"{0}\"".format(
             ddl_file
         ))
-        self.__run_cmd(pg_dump_cmd)
+        run_cmd(pg_dump_cmd)
 
         if pg_dumpall_cmd:
             pg_dumpall_cmd += ' | hdfs dfs -put - {0}'.format(global_file)
@@ -161,15 +94,16 @@ class HdbBackup:
             self.logger.info("Executing global object backup, global backup file: \"{0}\"".format(
                 global_file
             ))
-            self.__run_cmd(pg_dumpall_cmd)
+            run_cmd(pg_dumpall_cmd)
 
     def __get_args(self, executable, *args):
         """
         compile all the executable and the arguments, combining with common arguments
         to create a full batch of command args
-        @:param:
+        :param:
             executable - type of command
             *args      - other Keyword argument parameters
+        :return: Argument List for pg_dump, pg_dumpall_cmd command
         """
         args = list(args)
         args.insert(0, executable)
@@ -242,45 +176,25 @@ class HdbBackup:
                     )
             )
 
+        # If database name
+        if self.dbname:
+            args.append(self.dbname)
+        else:
+            error_logger("No Database Name specified from where it needs to backup")
+
         # If global dump requested or If this is a full database backup, then get all the global object else ignore
         if self.global_dump or not (self.table or self.schema or self.exclude_table or self.exclude_schema):
             pg_dumpall_cmd = "pg_dumpall --schema-only --globals-only"
         else:
             pg_dumpall_cmd = None
 
-        # Pass the Database name to backup
-        args.append(self.dbname)
         return args, pg_dumpall_cmd
-
-    def __run_cmd(self, cmd, popen_kwargs=None):
-        """
-        Run the command thrown at it by opening a shell and if encountered any error
-        exit by displaying the command that failed.
-        @:param
-            cmd - command to be executed
-        """
-
-        self.logger.debug("Attempting to run the command: \"{0}\"".format(
-            cmd
-        ))
-        # Get the environment
-        env = self.__get_env()
-
-        # Execute the commands
-        pipe = subprocess.Popen(cmd, shell=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = pipe.communicate()
-
-        # if the command execution fail, throw error
-        if pipe.returncode > 0 or err:
-                self.__error_logger(err)
-
-        return pipe
 
     def __fetch_object_info(self):
         """
         This method is responsible for fetching all the table names (with schema) from a given database
         and based on the option passed it dynamically alters its condition..
-        :param database is the name of the target database
+        :return: Table data from the database
         """
 
         # Main query skeleton
@@ -296,7 +210,7 @@ class HdbBackup:
                                               'pg_bitmapindex',
                                               'pg_toast', 'gp_toolkit' )
                     AND c.relkind = 'r' and c.relstorage != 'x'
-                    AND relname not in ( SELECT partitiontablename from pg_partitions) """
+                    AND relname not in (SELECT partitiontablename FROM pg_partitions) """
 
         # If only selected table then add table include condition
         if self.table:
@@ -325,67 +239,43 @@ class HdbBackup:
         try:
             self.cursor.execute(query)
         except DatabaseError, e:
-            self.__error_logger(e)
+            error_logger(e)
 
         return self.cursor.fetchall()
 
     def __verify_table_schema(self, tables):
+        """
+        If the user provided tables / schema then we need to ensure that the user provided list is available in
+        the database, if something is missing then we will error out and ask user to fix the list.
+        :param tables: list of tables found on the database.
+        :return:
+        """
 
         # If user provided a list of tables.
         if self.table:
             self.logger.debug("Checking if the provided list of table is found on the database..")
             user_tables_list = self.table.split(',')
-            for table in tables:
-                if table[0] not in user_tables_list:
-                    self.__error_logger("Found no table \"{0}\" in the database \"{1}\"".format(
-                        table, self.dbname
+            if len(user_tables_list) != len(tables):
+                    error_logger("One or more tables cannot be found on the database \"{0}\","
+                                 " provided total table: {1}, found: {2}".format(
+                            self.dbname, len(user_tables_list), len(tables)
                     ))
 
         # If user provided a list of schemas.
         elif self.schema:
             user_schemas_list = self.schema.split(',')
-            schema_query_skeleton = "SELECT count(*) FROM pg_namespace WHERE nspname = '{0}'"
             self.logger.debug("Checking if the provided list of schema is found on the database..")
             for schema in user_schemas_list:
-                schema_query = schema_query_skeleton.format(schema)
+                schema_query = self.schema_query_skeleton.format(schema)
                 try:
                     self.cursor.execute(schema_query)
                 except DatabaseError, e:
-                    self.__error_logger(e)
+                    error_logger(e)
                 result = self.cursor.fetchone()
                 if result[0] == 0L:
-                    self.__error_logger("Found no schema \"{0}\" in the database \"{1}\"".format(
+                    error_logger("Found no schema \"{0}\" in the database \"{1}\"".format(
                         schema, self.dbname
                     ))
-
-    def __external_tables_activity_builder(self, table):
-        """
-        This method is responsible for creating all the external tables used to dump the data from the internal tables
-        @:param: table - table name (i.e in the format schema-name.table-name)
-        """
-        # Split the object into schema and relation name
-        schema = table[0].split('.')[0]
-        relation = table[0].split('.')[1]
-
-        # Built the create external table query
-        create_external_table_query = self.create_external_table_skeleton.format(
-            self.ext_schema_name,
-            relation,
-            table[0],
-            self.pxf_port,
-            self.data_backup_dir,
-            schema.replace('"', ''),
-            relation.replace('"', '')
-        )
-
-        # Built insert into external table query
-        insert_external_table_query = self.insert_external_table_skeleton.format(
-            self.ext_schema_name,
-            relation,
-            table[0]
-        )
-
-        return create_external_table_query, insert_external_table_query
 
     def print_display_info(self):
         """
@@ -434,41 +324,29 @@ class HdbBackup:
         self.logger.info("PXF Port: {0}".format(self.pxf_port))
         self.logger.info("*******************************************************************************************")
 
-    def print_progress(self, iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
-        """
-        Call in a loop to create terminal progress bar
-        @params:
-            iteration    - Required  : current iteration (Int)
-            total        - Required  : total iterations (Int)
-            prefix       - Optional  : prefix string (Str)
-            suffix       - Optional  : suffix string (Str)
-            decimals     - Optional  : positive number of decimals in percent complete (Int)
-            bar_length   - Optional  : character length of bar (Int)
-        """
-        format_str = "{0:." + str(decimals) + "f}"
-        percents = format_str.format(100 * (iteration / float(total)))
-        filled_length = int(round(bar_length * iteration / float(total)))
-        bar = '#' * filled_length + '-' * (bar_length - filled_length)
-        sys.stdout.write('\r%s (%s/%s) |%s| %s%s %s' % (prefix, iteration, total, bar, percents, '%', suffix)),
-        sys.stdout.flush()
-        if iteration == total:
-            sys.stdout.write('\n')
-            sys.stdout.flush()
+        # Ask for confirmation
+        if not self.no_prompt:
+            choice = confirm("Is the above backup parameters correct and do you wish to continue")
+            if choice.startswith('n') or choice.startswith('N'):
+                self.logger.info("Aborting due to user request....")
+                sys.exit(0)
 
     def __backup_data(self):
         """
-        Backup actual data into external tables. This method is to run the
-        INSERT INTO ext_table SELECT * from internal_table
+        Backup actual data using external tables. The methods Create External Table and use
+        "INSERT INTO ext_table SELECT * from internal_table" to backup the data to HDFS
+        :return
         """
         drop_schema = self.drop_schema_skeleton.format(self.ext_schema_name)
         create_schema = self.create_schema_skeleton.format(self.ext_schema_name)
 
         # In case the previous hawqbackup schema was not cleaned up and user supplied force then drop it
         if self.force:
-            self.logger.debug("Attempting to drop the schema \"{0}\"",format(
+            self.logger.debug("Attempting to drop the schema \"{0}\"".format(
                 self.ext_schema_name
             ))
             self.cursor.execute(drop_schema)
+            self.conn.commit()
 
         # Fetch all the tables in the database.
         tables = self.__fetch_object_info()
@@ -493,38 +371,51 @@ class HdbBackup:
             self.cursor.execute(create_schema)
             self.conn.commit()
         except DatabaseError:
-            self.__error_logger("Found schema \"{0}\" already exits on the database \"{1}\", "
-                                "Try dropping/renaming the schema or use --force option".format(
-                self.ext_schema_name, self.dbname
+            error_logger("Found schema \"{0}\" already exits on the database \"{1}\", "
+                         "Try dropping/renaming the schema or use --force option".format(
+                            self.ext_schema_name, self.dbname
             ))
 
         # Loop through the table list to backup the data.
         for table in tables:
             position_dump = tables.index(table) + 1
-            self.print_progress(
+            print_progress(
                     position_dump,
                     total_tables,
                     prefix='Dumping Table Data (current/total):',
                     suffix='Done',
                     bar_length=50
             )
-            create, insert = self.__external_tables_activity_builder(table)
+            create, insert = ext_table_sql_generator(
+                self.create_external_table_skeleton,
+                self.insert_external_table_skeleton,
+                table[0],
+                self.ext_schema_name,
+                self.pxf_port,
+                self.data_backup_dir
+            )
             try:
                 self.cursor.execute(create)
                 self.cursor.execute(insert)
                 self.conn.commit()
             except DatabaseError, e:
-                self.__error_logger(e)
+                error_logger(e)
 
         # Drop the schema once done
         try:
+            self.logger.debug("Backup is done, drop the schema \"{0}\"".format(
+                self.ext_schema_name
+            ))
             self.cursor.execute(drop_schema)
+            self.conn.commit()
+            self.conn.close()
         except DatabaseError, e:
-            self.__error_logger(e)
+            error_logger(e)
 
     def run_backup(self):
         """
         Run the actual backup
+        :return
         """
 
         # Start time
@@ -532,22 +423,26 @@ class HdbBackup:
 
         # Check for all executable and environment before running backup commands
         self.logger.info("Checking for all the executables that is needed by the program")
-        self.__check_executables()
+        check_executables()
 
         # Prepare and check connection to the database.
         self.logger.info("Checking the database connectivity")
-        self.set_connection()
+        self.conn, self.cursor = set_connection(self.dbname, self.host, self.port, self.username, self.password)
 
-        # Prepare the database id and folder location where the backup will be stored.
+        # Set backup id
+        self.logger.info("Setting up the database backup ID for this backup")
+        self.set_backup_id()
+
+        # Prepare the folder and get location where the backup will be stored.
         self.logger.info("Preparing all the directories where the backup will be stored")
-        self.__prepare_backup()
+        self.metadata_backup_dir, self.data_backup_dir = get_directory(self.backup_base, self.backup_id, self.dbname)
 
-        # Display the
+        # Display the backup information
         self.print_display_info()
 
         # Unless explicitly requested not to dump metadata, backup the metadata of objects
         if not self.data_only:
-            self.logger.info("Backing up the database DDL.")
+            self.logger.info("Backing up the DDL")
             self.__backup_metadata()
 
         # Unless explicitly requested not to dump data, dump the data of the objects.
@@ -555,5 +450,8 @@ class HdbBackup:
             self.logger.info("Backing up the data")
             self.__backup_data()
 
-        # Start time
-        self.logger.info("Ending Backup at: {0}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        # End completion message & time
+        self.logger.info("Backup of the database \"{0}\" and of the backup type \"{1}\" has completed".format(
+            self.dbname, self.backup_type
+        ))
+        self.logger.info("Backup finished at: {0}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
