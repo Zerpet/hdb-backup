@@ -11,6 +11,7 @@ def check_executables():
     run_cmd("which pg_dump")
     run_cmd("which pg_dumpall")
     run_cmd("which pg_restore")
+    run_cmd("which psql")
 
 
 def error_logger(error):
@@ -19,8 +20,7 @@ def error_logger(error):
     :param error: the error message from the exception
     """
     # The error message to be printed when called.
-    logger.error("Found exception in executing the command, "
-                 "the error message received from the command is below")
+    logger.error("Found exception in executing the command, the error message received is below")
     logger.error(error)
     logger.error("aborting the script ...")
     sys.exit(2)
@@ -39,7 +39,7 @@ def set_connection(dbname, host, port, username, password):
         Cursor - Cursor to execute the query
     """
 
-    logger.debug("Attempting to create a connection to the database.")
+    logger.debug("Attempting to create a connection to the database")
     logger.debug("Parameters :- Database name: {0}, hostname: {1}, port: {2}, user: {3}".format(
             dbname, host, port, username
     ))
@@ -63,7 +63,6 @@ def get_directory(base_directory, backup_id, dbname):
     :return:
         Metadata Directory , Data directory
     """
-
     # Prepare the backup directory
     logger.debug("Preparing the backup folders")
     backup_base = base_directory
@@ -87,14 +86,15 @@ def ext_table_sql_generator(create_ext, insert_ext, table, ext_schema, pxf_port,
     :return: Create External Table SQL Query , Insert SQL Query
     """
     # Split the object into schema and relation name
-    schema = table[0].split('.')[0]
-    relation = table[0].split('.')[1]
+    schema = (table.split('.')[0]).replace('"', '')
+    relation = (table.split('.')[1]).replace('"', '')
+    ext_tab_name = '"' + schema + '_' + relation + '"'
 
     # Built the create external table query
     create_external_table_query = create_ext.format(
             ext_schema,
-            relation,
-            table[0],
+            ext_tab_name,
+            table,
             pxf_port,
             data_dir,
             schema.replace('"', ''),
@@ -104,8 +104,8 @@ def ext_table_sql_generator(create_ext, insert_ext, table, ext_schema, pxf_port,
     # Built insert into external table query
     insert_external_table_query = insert_ext.format(
             ext_schema,
-            relation,
-            table[0]
+            ext_tab_name,
+            table
     )
 
     return create_external_table_query, insert_external_table_query
@@ -131,12 +131,14 @@ def get_env():
     return env
 
 
-def run_cmd(cmd, popen_kwargs=None):
+def run_cmd(cmd, ignore_error=None, popen_kwargs=None):
     """
     Run the command thrown at it by opening a shell and if encountered any error
     exit by displaying the command that failed.
-    :param:  cmd - command to be executed
-    :return: pipe
+    :param cmd: command to be executed
+    :param ignore_error: Ignore any error if found
+    :param popen_kwargs: And additional shell varaibles
+    :return: Output of the command
     """
 
     logger.debug("Attempting to run the command: \"{0}\"".format(
@@ -150,22 +152,26 @@ def run_cmd(cmd, popen_kwargs=None):
     out, err = pipe.communicate()
 
     # if the command execution fail, throw error
-    if pipe.returncode > 0 or err:
+    if ignore_error and err:
+        logger.warn("Found exception in running the command \"{0}\"".format(cmd))
+        logger.error(err)
+        logger.warn("skipping due to ignore option...".format(cmd))
+    elif pipe.returncode > 0 or err:
         error_logger(err)
 
-    return pipe
+    return out
 
 
 def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_length=100):
     """
     Call in a loop to create terminal progress bar
-    @params:
-        iteration    - Required  : current iteration (Int)
-        total        - Required  : total iterations (Int)
-        prefix       - Optional  : prefix string (Str)
-        suffix       - Optional  : suffix string (Str)
-        decimals     - Optional  : positive number of decimals in percent complete (Int)
-        bar_length   - Optional  : character length of bar (Int)
+    :param iteration: - Required  : current iteration (Int)
+    :param total: - Required  : total iterations (Int)
+    :param prefix: - Optional  : prefix string (Str)
+    :param suffix: - Optional  : suffix string (Str)
+    :param decimals: - Optional  : positive number of decimals in percent complete (Int)
+    :param bar_length: - Optional  : character length of bar (Int)
+    :return:
     """
     format_str = "{0:." + str(decimals) + "f}"
     percents = format_str.format(100 * (iteration / float(total)))

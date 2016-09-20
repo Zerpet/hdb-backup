@@ -44,7 +44,6 @@ class HdbBackup:
         # Query Skeleton for backup
         self.drop_schema_skeleton = """ DROP SCHEMA IF EXISTS {0} CASCADE """
         self.create_schema_skeleton = """ CREATE SCHEMA {0} """
-        self.lock_table_skeleton = """ LOCK TABLE {0} IN ACCESS SHARE MODE """
         self.create_external_table_skeleton = """ CREATE WRITABLE EXTERNAL TABLE {0}.{1} ( like {2} )
                                               LOCATION ('pxf://localhost:{3}{4}/{5}/{6}?profile=HdfsTextSimple')
                                               FORMAT 'TEXT' (DELIMITER = E'\\t') """
@@ -176,14 +175,18 @@ class HdbBackup:
                     )
             )
 
+        # If database name
+        if self.dbname:
+            args.append(self.dbname)
+        else:
+            error_logger("No Database Name specified from where it needs to backup")
+
         # If global dump requested or If this is a full database backup, then get all the global object else ignore
         if self.global_dump or not (self.table or self.schema or self.exclude_table or self.exclude_schema):
             pg_dumpall_cmd = "pg_dumpall --schema-only --globals-only"
         else:
             pg_dumpall_cmd = None
 
-        # Pass the Database name to backup
-        args.append(self.dbname)
         return args, pg_dumpall_cmd
 
     def __fetch_object_info(self):
@@ -335,6 +338,7 @@ class HdbBackup:
                 self.ext_schema_name
             ))
             self.cursor.execute(drop_schema)
+            self.conn.commit()
 
         # Fetch all the tables in the database.
         tables = self.__fetch_object_info()
@@ -361,7 +365,7 @@ class HdbBackup:
         except DatabaseError:
             error_logger("Found schema \"{0}\" already exits on the database \"{1}\", "
                          "Try dropping/renaming the schema or use --force option".format(
-                    self.ext_schema_name, self.dbname
+                            self.ext_schema_name, self.dbname
             ))
 
         # Loop through the table list to backup the data.
@@ -377,7 +381,7 @@ class HdbBackup:
             create, insert = ext_table_sql_generator(
                 self.create_external_table_skeleton,
                 self.insert_external_table_skeleton,
-                table,
+                table[0],
                 self.ext_schema_name,
                 self.pxf_port,
                 self.data_backup_dir
@@ -395,6 +399,7 @@ class HdbBackup:
                 self.ext_schema_name
             ))
             self.cursor.execute(drop_schema)
+            self.conn.commit()
             self.conn.close()
         except DatabaseError, e:
             error_logger(e)
@@ -420,7 +425,7 @@ class HdbBackup:
         self.logger.info("Setting up the database backup ID for this backup")
         self.set_backup_id()
 
-        # Prepare the database id and folder location where the backup will be stored.
+        # Prepare the folder and get location where the backup will be stored.
         self.logger.info("Preparing all the directories where the backup will be stored")
         self.metadata_backup_dir, self.data_backup_dir = get_directory(self.backup_base, self.backup_id, self.dbname)
 
@@ -429,7 +434,7 @@ class HdbBackup:
 
         # Unless explicitly requested not to dump metadata, backup the metadata of objects
         if not self.data_only:
-            self.logger.info("Backing up the database DDL.")
+            self.logger.info("Backing up the DDL")
             self.__backup_metadata()
 
         # Unless explicitly requested not to dump data, dump the data of the objects.
