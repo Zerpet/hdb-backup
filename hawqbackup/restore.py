@@ -33,6 +33,9 @@ class HDBRestore:
         self.generate_list = None
         self.user_list = None
         self.clean = False
+        self.create_target_db = False
+        self.target_db_encoding = 'UTF8'
+        self.global_restore = False
         self.no_privileges = False
         self.ignore = False
         self.restore_base = "/hawq_backup"
@@ -60,6 +63,11 @@ class HDBRestore:
         ddl_file = self.metadata_backup_dir + '/hdb_dump_' + self.backup_id + '_ddl.dmp'
         global_file = self.metadata_backup_dir + '/hdb_dump_' + self.backup_id + '_global.dmp'
 
+        # If request to create database then create it with default encoding if not provided.
+        if self.create_target_db:
+            create_db_cmd = 'createdb ' + self.to_dbname + ' -E ' + self.target_db_encoding
+            run_cmd(create_db_cmd)
+
         # Metadata restore command creator
         pg_restore_cmd = self.__get_args(
                 "pg_restore",
@@ -69,19 +77,25 @@ class HDBRestore:
         metadata_file = 'hdfs dfs -cat ' + ddl_file + ' | '
 
         # If generate list is requested.
-        if self.generate_list:
-            pg_restore_cmd += ' > ' + self.generate_list_location
-            pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
-            run_cmd(pg_restore_cmd, self.ignore)
-            self.logger.info("Backup List for the backup ID \"{0}\" is generated at location: \"{1}\"".format(
-                self.backup_id, self.generate_list_location
-            ))
-            sys.exit(0)
+        if __name__ == '__main__':
+            if self.generate_list:
+                pg_restore_cmd += ' > ' + self.generate_list_location
+                pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
+                run_cmd(pg_restore_cmd, self.ignore)
+                self.logger.info("Backup List for the backup ID \"{0}\" is generated at location: \"{1}\"".format(
+                    self.backup_id, self.generate_list_location
+                ))
+                sys.exit(0)
 
-        # Else then this a full restore or user list restore
-        else:
-            pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
-            run_cmd(pg_restore_cmd, self.ignore)
+            # Else then this a full restore or user list restore
+            else:
+                pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
+                run_cmd(pg_restore_cmd, self.ignore)
+
+        # If full restore or if requested to restore the global dump then
+        if self.global_restore or not (self.generate_list or self.user_list):
+            psql_cmd = 'psql -d ' + self.to_dbname + ' -f ' + global_file + ' -U ' + self.username
+            run_cmd(psql_cmd)
 
     def __get_args(self, executable, *args):
         """
@@ -159,7 +173,7 @@ class HDBRestore:
         contents = [line.rstrip('\n') for line in open(self.user_list)]
         user_provided_restore_list = []
         for content in contents:
-            if 'TABLE' in content:
+            if 'TABLE' in content and not content.startswith(';'):
                 table = '"' + content.split()[-2] + '"'
                 schema = '"' + content.split()[-3] + '"'
                 user_provided_restore_list.append(
@@ -280,8 +294,11 @@ class HDBRestore:
         self.logger.info("Host Name: {0}".format(self.host))
         self.logger.info("Port Number: {0}".format(self.port))
         self.logger.info("User Name: {0}".format(self.username))
+        self.logger.info("Create Target Database: {0}".format(self.create_target_db))
+        self.logger.info("Target Database Encoding: {0}".format(self.target_db_encoding))
         self.logger.info("Restore Type: {0}".format(self.restore_type))
         self.logger.info("Backup ID: {0}".format(self.backup_id))
+        self.logger.info("Restore Global Restore: {0}".format(self.global_restore))
         self.logger.info("Restore Schema Only: {0}".format(self.schema_only))
         self.logger.info("Restore Data Only: {0}".format(self.data_only))
         self.logger.info("Drop Objects before restore: {0}".format(self.clean))
