@@ -189,7 +189,7 @@ def confirm(question, default='no'):
     prompts for yes or no response from the user. Returns True for yes and
     False for no.
     :param question: The question that will be asked to user
-    :param default: The answer that is given by the user if he
+    :param default: The answer that is given by the user
     :return:
     """
 
