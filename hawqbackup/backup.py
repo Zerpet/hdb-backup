@@ -1,6 +1,6 @@
-import datetime, logging
+import datetime, logging, sys
 from pgdb import connect, DatabaseError
-from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator
+from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator, confirm
 
 
 class HdbBackup:
@@ -38,6 +38,7 @@ class HdbBackup:
         self.data_backup_dir = None
         self.force = False
         self.create_database = False
+        self.no_prompt = False
         self.backup_base = "/hawq_backup"
         self.ext_schema_name = 'hawqbackup_schema'
 
@@ -322,6 +323,13 @@ class HdbBackup:
         self.logger.info("External Table Schema Name: {0}".format(self.ext_schema_name))
         self.logger.info("PXF Port: {0}".format(self.pxf_port))
         self.logger.info("*******************************************************************************************")
+
+        # Ask for confirmation
+        if not self.no_prompt:
+            choice = confirm("Is the above backup parameters correct and do you wish to continue")
+            if choice.startswith('n') or choice.startswith('N'):
+                self.logger.info("Aborting due to user request....")
+                sys.exit(0)
 
     def __backup_data(self):
         """

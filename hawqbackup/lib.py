@@ -182,3 +182,36 @@ def print_progress(iteration, total, prefix='', suffix='', decimals=1, bar_lengt
     if iteration == total:
         sys.stdout.write('\n')
         sys.stdout.flush()
+
+
+def confirm(question, default='no'):
+    """
+    prompts for yes or no response from the user. Returns True for yes and
+    False for no.
+    :param question: The question that will be asked to user
+    :param default: The answer that is given by the user if he
+    :return:
+    """
+
+    valid = {"yes": "yes", "y": "yes", "ye": "yes",
+             "no": "no", "n": "no"}
+
+    if not default:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while 1:
+        sys.stdout.write(question + prompt)
+        choice = raw_input().lower()
+        if default is not None and choice == '':
+            return default
+        elif choice in valid.keys():
+            return valid[choice]
+        else:
+            sys.stdout.write("Invalid response. Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').\n")

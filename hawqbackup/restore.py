@@ -1,6 +1,6 @@
 import datetime, logging, sys
 from pgdb import connect, DatabaseError
-from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator
+from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator, confirm
 
 
 class HDBRestore:
@@ -18,12 +18,12 @@ class HDBRestore:
         self.host = 'localhost'
         self.port = 5432
         self.password = None
-        self.to_dbname = 'postgres'
+        self.to_dbname = None
+        self.from_dbname = 'postgres'
         self.pxf_port = 51200
 
         # Restore Parameters
         self.backup_id = None
-        self.from_dbname = 'postgres'
         self.force = False
         self.metadata_backup_dir = None
         self.data_backup_dir = None
@@ -38,6 +38,7 @@ class HDBRestore:
         self.global_restore = False
         self.no_privileges = False
         self.ignore = False
+        self.no_prompt = False
         self.restore_base = "/hawq_backup"
         self.ext_schema_name = 'hawqrestore_schema'
         self.generate_list_location = '/tmp/backup_list_' + self.backup_id
@@ -77,20 +78,19 @@ class HDBRestore:
         metadata_file = 'hdfs dfs -cat ' + ddl_file + ' | '
 
         # If generate list is requested.
-        if __name__ == '__main__':
-            if self.generate_list:
-                pg_restore_cmd += ' > ' + self.generate_list_location
-                pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
-                run_cmd(pg_restore_cmd, self.ignore)
-                self.logger.info("Backup List for the backup ID \"{0}\" is generated at location: \"{1}\"".format(
-                    self.backup_id, self.generate_list_location
-                ))
-                sys.exit(0)
+        if self.generate_list:
+            pg_restore_cmd += ' > ' + self.generate_list_location
+            pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
+            run_cmd(pg_restore_cmd, self.ignore)
+            self.logger.info("Backup List for the backup ID \"{0}\" is generated at location: \"{1}\"".format(
+                self.backup_id, self.generate_list_location
+            ))
+            sys.exit(0)
 
-            # Else then this a full restore or user list restore
-            else:
-                pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
-                run_cmd(pg_restore_cmd, self.ignore)
+        # Else then this a full restore or user list restore
+        else:
+            pg_restore_cmd = metadata_file + pg_restore_cmd + ' ; exit $PIPESTATUS;'
+            run_cmd(pg_restore_cmd, self.ignore)
 
         # If full restore or if requested to restore the global dump then
         if self.global_restore or not (self.generate_list or self.user_list):
@@ -312,6 +312,13 @@ class HDBRestore:
         self.logger.info("PXF Port: {0}".format(self.pxf_port))
         self.logger.info("*******************************************************************************************")
 
+        # Ask for confirmation
+        if not self.no_prompt:
+            choice = confirm("Is the above restore parameters correct and do you wish to continue")
+            if choice.startswith('n') or choice.startswith('N'):
+                self.logger.info("Aborting due to user request....")
+                sys.exit(0)
+
     def run_restore(self):
         """
         Run the restore steps.
@@ -328,6 +335,13 @@ class HDBRestore:
         # Check if backup key is provided
         if not self.backup_id:
             error_logger("No backup key specified, restore can't continue")
+
+        # If no to_dbname is not given then make to_dbname = from_dbname
+        if not self.to_dbname:
+            self.logger.info("This database is going to restore the data to the database \"{0}\"".format(
+                self.from_dbname
+            ))
+            self.to_dbname = self.from_dbname
 
         # Prepare and check connection to the database.
         self.logger.info("Checking the database connectivity")
