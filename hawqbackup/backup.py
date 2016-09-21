@@ -1,6 +1,10 @@
-import datetime, logging, sys
-from pgdb import connect, DatabaseError
-from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator, confirm
+import datetime
+import logging
+import sys
+from pgdb import DatabaseError
+
+from lib import check_executables, error_logger, set_connection, run_cmd, print_progress
+from lib import get_directory, ext_table_sql_generator, confirm
 
 
 class HdbBackup:
@@ -455,3 +459,19 @@ class HdbBackup:
             self.dbname, self.backup_type
         ))
         self.logger.info("Backup finished at: {0}".format(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+    def set_vars(self, options_obj):
+        self.dbname = options_obj.database
+        self.username = options_obj.username
+        self.host = options_obj.host
+        self.port = options_obj.port
+        self.password = options_obj.password
+        self.schema_only = options_obj.schema_only
+        self.data_only = options_obj.data_only
+        self.schema = options_obj.schema
+        self.table = options_obj.table
+        self.exclude_schema = options_obj.exclude_schema
+        self.exclude_table = options_obj.exclude_table
+        self.force = options_obj.force
+        self.global_dump = options_obj.include_roles
+

@@ -2,7 +2,6 @@ import sys
 import argparse
 import logging
 import logging.handlers
-import pgdb
 
 import hawqbackup
 import backup
@@ -15,7 +14,7 @@ def parseargs(args):
     logger = logging.getLogger("hdb_backup")
 
     # Global options
-    parser = argparse.ArgumentParser(prog='hawq-backup', # usage="%(prog)s (backup | restore) [options] -d database",
+    parser = argparse.ArgumentParser(prog='hawq-backup',
                                      description='This tool aims to help automating HDB backups and '
                                                  'restore tasks. This tool is capable of parallel '
                                                  'backup and restore a database to/from HDFS.',
@@ -26,7 +25,7 @@ def parseargs(args):
     shared_parser = argparse.ArgumentParser(add_help=False)
     shared_parser.add_argument('-?', '--help', action='help', help='Prints this message')
     shared_parser.add_argument('--debug', action='store_true', help='Enables debug logging')
-    shared_parser.add_argument('-B', '--parallel', type=int, default=4, help='Number of parallel workers (Default: 4)')
+    # shared_parser.add_argument('-B', '--parallel', type=int, default=4, help='Number of parallel workers (Default: 4)')
     shared_parser.add_argument('-v', '--version', action='version', version=' %(prog)s ' + hawqbackup.__version__)
 
     # Connection parameters
@@ -38,26 +37,40 @@ def parseargs(args):
     # Database is always required
     shared_parser.add_argument('-d', '--database', required=True, help='Database to connect to')
 
-    shared_parser.add_argument('--schema-only', dest='schemaonly', action='store_true',
-                               help='Backup/restore only the table structure, do not backup/restore data')
-    shared_parser.add_argument('--data-only', dest='dataonly', action='store_true',
-                               help='Backup/restore data only, do not backup/restore table structure')
+    schema_or_data_group = shared_parser.add_mutually_exclusive_group()
+    schema_or_data_group.add_argument('--schema-only', dest='schema_only', action='store_true',
+                                      help='Backup/restore only the table structure, do not backup/restore data')
+    schema_or_data_group.add_argument('--data-only', dest='data_only', action='store_true',
+                                      help='Backup/restore data only, do not backup/restore table structure')
 
     subparsers = parser.add_subparsers(dest='command')
 
     # Backup specific options
-    backup_parser = subparsers.add_parser('backup', parents=[shared_parser], add_help=False, help='Backup a database into HDFS')
+    backup_parser = subparsers.add_parser('backup', parents=[shared_parser], add_help=False,
+                                          help='Backup a database into HDFS')
     backup_options_group = backup_parser.add_mutually_exclusive_group()
-    # TODO: check schema if it has more than one dot
-    backup_options_group.add_argument('-s', '--schema', help='Backup only tables in this schema')
-    backup_options_group.add_argument('-S', '--schema-list', dest='schema_list',
-                                      help='Coma separated list of schemas to backup tables from')
-    backup_options_group.add_argument('-t', '--table', help='Backup just this table')
+    backup_options_group.add_argument('-s', '--schema', help='Backup only tables in this schema. Accepts '
+                                                             'comma-separated list for multiple')
+    backup_options_group.add_argument('-t', '--table', help='Backup just this table. Accepts '
+                                                            'comma-separated list for multiple')
+    backup_options_group.add_argument('--exclude-table', dest='exclude_table',
+                                      help='Do not include table "schema"."table" in the backup. Accepts '
+                                           'comma-separated list for multiple tables')
+    backup_options_group.add_argument('--exclude-schema', dest='exclude_schema',
+                                      help='Do not include schema "schema" in the backup. Accepts '
+                                           'comma-separated list for multiple schemas')
+
+    backup_parser.add_argument('-F', '--force', default=False, action='store_true',
+                               help='Drop hawqbackup schema if it exists')
+    backup_parser.add_argument('--include-roles', dest='include_roles', default=False, action='store_true', help='Include user roles and'
+                                                                                           'resource queues')
 
     # Restore specific options
     restore_parser = subparsers.add_parser('restore', add_help=False, parents=[shared_parser],
                                            help='Restore a database from HDFS')
-    restore_parser.add_argument('backupid', metavar='timestamp', nargs=1, type=long)
+    restore_parser.add_argument('-k', '--backup-id', dest='backupid', metavar='timestamp', nargs=1, type=long)
+
+    # TODO: --database --to-database
 
     options_object = parser.parse_args(args)
 
@@ -115,6 +128,11 @@ def is_table_name_valid(name):
 
 
 def main(args):
+    """
+    Where all the magic happens
+    :param args: sys.argv[1:]
+    :return: 0 on success. 1 on invalid option/s in command line.
+    """
     logging_format = "%(asctime)-15s - %(module)s.%(funcName)s - %(levelname)s - %(message)s"
     log_file_name = expanduser('~') + '/hawq_backup.log'
 
@@ -133,14 +151,27 @@ def main(args):
 
     cmdline_args = parseargs(args)
 
+    if cmdline_args.schema and not is_schema_name_valid(cmdline_args.schema):
+        logger.error("The schema name '%s' is not valid. Make sure you use double quotes if your name contains dots"
+                     % cmdline_args.schema)
+        return 1
+
     logger.info("Starting HDB backup utility")
 
     if cmdline_args.command == 'backup':
-        pass
+        logger.debug("Initializing backup stage")
+        hdb_backup = backup.HdbBackup()
+
+        logger.debug("Setting options for backup")
+        hdb_backup.set_vars(cmdline_args)
+
+        hdb_backup.run_backup()
+
     else:
         pass
 
     return 0
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])
