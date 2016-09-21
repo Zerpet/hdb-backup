@@ -193,8 +193,13 @@ def confirm(question, default='no'):
     :return:
     """
 
-    valid = {"yes": "yes", "y": "yes", "ye": "yes",
-             "no": "no", "n": "no"}
+    valid = {
+        "yes": "yes",
+        "ye": "yes",
+        "y": "yes",
+        "no": "no",
+        "n": "no"
+    }
 
     if not default:
         prompt = " [y/n]: "
@@ -213,5 +218,4 @@ def confirm(question, default='no'):
         elif choice in valid.keys():
             return valid[choice]
         else:
-            sys.stdout.write("Invalid response. Please respond with 'yes' or 'no' "
-                             "(or 'y' or 'n').\n")
+            sys.stdout.write("Invalid response. Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
