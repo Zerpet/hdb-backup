@@ -197,11 +197,11 @@ def confirm(question, default='no'):
              "no": "no", "n": "no"}
 
     if not default:
-        prompt = " [y/n] "
+        prompt = " [y/n]: "
     elif default == "yes":
-        prompt = " [Y/n] "
+        prompt = " [Y/n]: "
     elif default == "no":
-        prompt = " [y/N] "
+        prompt = " [y/N]: "
     else:
         raise ValueError("invalid default answer: '%s'" % default)
 
