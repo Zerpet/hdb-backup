@@ -94,8 +94,10 @@ class HDBRestore:
 
         # If full restore or if requested to restore the global dump then
         if self.global_restore or not (self.generate_list or self.user_list):
-            psql_cmd = 'psql -d ' + self.to_dbname + ' -f ' + global_file + ' -U ' + self.username
-            run_cmd(psql_cmd)
+            read_hdfs_global_file = 'hdfs dfs -cat ' + global_file + ' | '
+            psql_cmd = 'psql -d ' + self.to_dbname + ' -U ' + self.username
+            global_restore_cmd = read_hdfs_global_file + psql_cmd
+            run_cmd(global_restore_cmd)
 
     def __get_args(self, executable, *args):
         """
@@ -315,7 +317,7 @@ class HDBRestore:
         # Ask for confirmation
         if not self.no_prompt:
             choice = confirm("Is the above restore parameters correct and do you wish to continue")
-            if choice.startswith('n') or choice.startswith('N'):
+            if choice == 'no':
                 self.logger.info("Aborting due to user request....")
                 sys.exit(0)
 

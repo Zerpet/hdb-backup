@@ -327,7 +327,7 @@ class HdbBackup:
         # Ask for confirmation
         if not self.no_prompt:
             choice = confirm("Is the above backup parameters correct and do you wish to continue")
-            if choice.startswith('n') or choice.startswith('N'):
+            if choice == 'no':
                 self.logger.info("Aborting due to user request....")
                 sys.exit(0)
 
