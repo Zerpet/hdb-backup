@@ -1,10 +1,14 @@
-import datetime, logging, sys
-from pgdb import connect, DatabaseError
-from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, ext_table_sql_generator, confirm
+import datetime
+import logging
+import sys
+
+from pgdb import DatabaseError
+
+from lib import check_executables, error_logger, set_connection, run_cmd, print_progress, get_directory, \
+    ext_table_sql_generator, confirm
 
 
 class HDBRestore:
-
     logger = logging.getLogger("hdb_logger")
 
     def __init__(self):
@@ -71,8 +75,8 @@ class HDBRestore:
 
         # Metadata restore command creator
         pg_restore_cmd = self.__get_args(
-                "pg_restore",
-                "--schema-only"
+            "pg_restore",
+            "--schema-only"
         )
         pg_restore_cmd = ' '.join(pg_restore_cmd)
         metadata_file = 'hdfs dfs -cat ' + ddl_file + ' | '
@@ -109,19 +113,19 @@ class HDBRestore:
         # If drop schema needed
         if self.clean:
             args.append(
-                    "--clean"
+                "--clean"
             )
 
         # If Grant/Revoke not needed
         if self.no_privileges:
             args.append(
-                    "--no-privileges"
+                "--no-privileges"
             )
 
         # If generate list is needed for the backup ID
         if self.generate_list:
             args.append(
-                    "--list"
+                "--list"
             )
 
         # If User list is provided
@@ -159,7 +163,7 @@ class HDBRestore:
                 schema = '"' + directory.split('/')[-2] + '"'
                 table = '"' + directory.split('/')[-1] + '"'
                 backup_object_list.append(
-                       schema + '.' + table
+                    schema + '.' + table
                 )
 
         return backup_object_list
@@ -230,7 +234,7 @@ class HDBRestore:
         except DatabaseError:
             error_logger("Found schema \"{0}\" already exits on the database \"{1}\", "
                          "Try dropping/renaming the schema or use --force option".format(
-                            self.ext_schema_name, self.to_dbname))
+                self.ext_schema_name, self.to_dbname))
 
         # Loop through the list to restore
         for table in relation_list:
@@ -238,11 +242,11 @@ class HDBRestore:
             # print table, relation_list
             position_dump = relation_list.index(table) + 1
             print_progress(
-                    position_dump,
-                    total_tables,
-                    prefix='Restoring Table Data (current/total):',
-                    suffix='Done',
-                    bar_length=50
+                position_dump,
+                total_tables,
+                prefix='Restoring Table Data (current/total):',
+                suffix='Done',
+                bar_length=50
             )
             create, insert = ext_table_sql_generator(
                 self.create_external_table_skeleton,
@@ -319,6 +323,32 @@ class HDBRestore:
                 self.logger.info("Aborting due to user request....")
                 sys.exit(0)
 
+    def set_vars(self, options_namespace):
+        self.from_dbname = options_namespace.database
+        self.username = options_namespace.username
+        self.host = options_namespace.host
+        self.port = options_namespace.port
+        self.password = options_namespace.password
+        self.force = options_namespace.force
+        self.global_restore = options_namespace.include_roles
+        self.schema_only = options_namespace.schema_only
+        self.data_only = options_namespace.data_only
+        self.backup_id = options_namespace.backup_id
+        self.to_dbname = options_namespace.target_database
+        self.ignore = options_namespace.ignore_error
+        self.generate_list = options_namespace.output_to_file
+        self.user_list = options_namespace.input_file
+
+        """
+        Attributes to options map (excluded when attribute name = option name
+        -------------------------
+        from_dbname     -- database
+        global_restore  -- include_roles
+        to_dbname       -- target_database
+        ignore          -- ignore_error
+
+        """
+
     def run_restore(self):
         """
         Run the restore steps.
@@ -349,7 +379,8 @@ class HDBRestore:
 
         # Prepare the folder and get location where the backup is stored.
         self.logger.info("Preparing to get all the directories where the backup is stored")
-        self.metadata_backup_dir, self.data_backup_dir = get_directory(self.restore_base, self.backup_id, self.from_dbname)
+        self.metadata_backup_dir, self.data_backup_dir = get_directory(self.restore_base, self.backup_id,
+                                                                       self.from_dbname)
 
         # Display the restore information
         self.print_display_info()

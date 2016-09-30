@@ -15,3 +15,6 @@ HDFS.
 
 Most of the testing will be done under HDP 2 platform. It _should_ work
 under other platforms. Feel free to test and provide feedback :)
+
+Please check the [Wiki page](https://github.com/Zerpet/hdb-backup/wiki)
+for details on usage and other information.
