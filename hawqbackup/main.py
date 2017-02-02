@@ -1,4 +1,3 @@
-import sys
 import argparse
 import logging
 import logging.handlers
@@ -195,6 +194,3 @@ def main(args):
 
     return 0
 
-
-if __name__ == '__main__':
-    main(sys.argv[1:])
